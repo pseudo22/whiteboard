@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Whiteboard with Chat</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <style>
+        #whiteboard-container {
+            border: 2px solid #ccc;
+            background-color: white;
+            position: relative;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        #cursor-label {
+            position: absolute;
+            padding: 5px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            border-radius: 3px;
+            pointer-events: none;
+            display: none;
+            z-index: 10;
+        }
+        #chat-messages {
+            background-color: #f8f9fa;
+            border-radius: 5px;
+            padding: 10px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+            height: 700px;
+        }
+        #chat-messages div {
+            padding: 8px;
+        }
+        .bg-light {
+            background-color: #e9ecef;
+        }
+        .text-primary {
+            color: #007bff;
+        }
+        #chat-messages small {
+            font-size: 0.8rem;
+            color: #6c757d;
+        }
+        button {
+            border: 1px solid #007bff;
+            background-color: #fff;
+            color: #007bff;
+            padding: 10px 15px;
+            margin-left: 5px;
+            border-radius: 5px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background-color: #007bff;
+            color: #fff;
+        }
+        button:disabled {
+            background-color: #e0e0e0;
+            color: #a1a1a1;
+            border: 1px solid #c0c0c0;
+        }
+        .logout-btn {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            margin: 0 20px;
+            padding: 10px 20px;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <h1 class="text-center mb-4">Whiteboard Room: {{ room_name }}</h1>
+    <div class="logout-btn">
+        <a href="{% url 'logout' %}" class="btn btn-danger">Logout</a>
+    </div>
+    
+    <div class="mb-2 d-flex ">
+        <input type="color" id="color-picker" value="#000000" class="form-control" style="width: 60px;">
+        <select id="shape-picker" class="form-control mx-2" style="width: 120px;">
+            <option value="free">Free Draw</option>
+            <option value="rect">Rectangle</option>
+            <option value="circle">Circle</option>
+        </select>
+        <button class="btn btn-light" id="eraser-btn">Eraser</button>
+        <button class="btn btn-light" id="undo-btn">Undo</button>
+        <button class="btn btn-light" id="redo-btn">Redo</button>
+        <button class="btn btn-danger" id="clear-btn">Clear</button>
+    </div>
+    
+    <div class="d-flex">
+        <div id="whiteboard-container" class="flex-grow-1"></div>
+        <div id="chat-container" class="border rounded" style="width: 30%; height: 768px;">
+            <div id="chat-messages" class="p-2">
+                {% for msg in messages %}
+                    <div class="mb-2 d-flex">
+                        <strong class="text-primary mr-2">{{ msg.user__username }}:</strong>
+                        <div class="bg-light p-2 rounded" style="flex-grow: 1;">
+                            <span>{{ msg.message }}</span>
+                            <small class="d-block text-muted mt-1">{{ msg.timestamp|date:"H:i" }}</small>
+                        </div>
+                    </div>
+                {% empty %}
+                    <div>No messages yet.</div>
+                {% endfor %}
+            </div>
+            <input type="text" id="chat-input" class="form-control" placeholder="Type a message">
+            <button id="send-btn" class="btn btn-primary ml-2" onclick="sendMessage()">Send</button>
+        </div>
+    </div>
+    
+    <p id="cursor-label" class="position-absolute"></p>
+    
+    <script src="https://unpkg.com/konva/konva.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
+    <script>
+        const roomName = "{{ room_name }}";
+        const user = "{{ user }}";
+        
+    
+        const socket = new WebSocket(
+            'ws://' + window.location.host + '/ws/whiteboardandchat/' + roomName + '/'
+        );
+    
+        socket.onopen = function () {
+            console.log('WebSocket connection established.');
+        };
+    
+        socket.onerror = function (error) {
+            console.error('WebSocket error:', error);
+        };
+    
+        socket.onclose = function () {
+            console.log('WebSocket connection closed.');
+        };
+    
+        const stage = new Konva.Stage({
+            container: 'whiteboard-container',
+            width: 1200,
+            height: 800,
+        });
+    
+        const layer = new Konva.Layer();
+        stage.add(layer);
+    
+        let isDrawing = false;
+        let currentShape;
+        let currentLine;
+        let selectedColor = document.getElementById("color-picker").value;
+        let selectedShape = document.getElementById("shape-picker").value;
+    
+        const cursorLabel = document.getElementById("cursor-label");
+        cursorLabel.style.display = 'none';
+    
+        document.getElementById('color-picker').addEventListener('input', (e) => {
+            selectedColor = e.target.value;
+        });
+    
+        document.getElementById('shape-picker').addEventListener('input', (e) => {
+            selectedShape = e.target.value;
+        });
+    
+        let startX, startY;
+        const undoStack = [];
+        const redoStack = [];
+
+        function addToUndoStack(shape) {
+            
+            undoStack.push(shape);
+        }
+
+        stage.on('mousedown', (e) => {
+            const pos = stage.getPointerPosition();
+            startX = pos.x;
+            startY = pos.y;
+            isDrawing = true;
+    
+            if (selectedShape === 'free') {
+                currentLine = new Konva.Line({
+                    stroke: selectedColor,
+                    strokeWidth: 3,
+                    points: [startX, startY],
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                });
+                addToUndoStack(currentLine)
+            } else if (selectedShape === 'rect') {
+                currentShape = new Konva.Rect({
+                    x: startX,
+                    y: startY,
+                    width: 0,
+                    height: 0,
+                    stroke: selectedColor,
+                    strokeWidth: 3,
+                });
+                layer.add(currentShape);
+                addToUndoStack(currentShape)
+            } else if (selectedShape === 'circle') {
+                currentShape = new Konva.Circle({
+                    x: startX,
+                    y: startY,
+                    radius: 0,
+                    stroke: selectedColor,
+                    strokeWidth: 3,
+                });
+                layer.add(currentShape);
+                addToUndoStack(currentShape)
+            }
+        });
+        
+        stage.on('mousemove', (e) => {
+            if (!isDrawing) return;
+            const pos = stage.getPointerPosition();
+            console.log(e)
+            
+            if (selectedShape === 'free' && currentLine) {
+                const newPoints = currentLine.points().concat([pos.x, pos.y]);
+                currentLine.points(newPoints);
+                socket.send(JSON.stringify({
+                    type: 'draw',
+                    shape: 'free',
+                    color: selectedColor,
+                    points: newPoints
+                }));
+                layer.add(currentLine)
+            } else if (selectedShape === 'rect' && currentShape) {
+                currentShape.width(pos.x - startX);
+                currentShape.height(pos.y - startY);
+                socket.send(JSON.stringify({
+                    type: 'draw',
+                    shape: 'rect',
+                    color: selectedColor,
+                    x: startX,
+                    y: startY,
+                    width: currentShape.width(),
+                    height: currentShape.height(),
+                }));
+                layer.add(currentShape)
+            } else if (selectedShape === 'circle' && currentShape) {
+                const radius = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
+                currentShape.radius(radius);
+                socket.send(JSON.stringify({
+                    type: 'draw',
+                    shape: 'circle',
+                    color: selectedColor,
+                    x: startX,
+                    y: startY,
+                    radius: radius,
+                }));
+                layer.add(currentShape)
+            }
+    
+            cursorLabel.style.display = 'block';
+            cursorLabel.innerText = `${user}`;
+            gsap.to(cursorLabel, { x: pos.x + 10, y: (e.evt.clientY - 1000), opacity: 1, duration: 0.2 });
+        });
+
+
+       stage.on('mouseup', (e) => {
+            isDrawing = false;
+
+            if (currentShape || currentLine) {
+                if (currentShape) {
+                    
+                    addToUndoStack(currentShape);
+
+                    socket.send(JSON.stringify({
+                        type: 'stop_draw',
+                        shape: selectedShape, 
+                        x: startX, 
+                        y: startY, 
+                        width: currentShape.width(), 
+                        height: currentShape.height() 
+                    }));
+                    currentShape = null; 
+                }
+
+                if (currentLine) {
+                    addToUndoStack(currentLine); 
+                    socket.send(JSON.stringify({
+                        type: 'stop_draw',
+                        shape: 'free', 
+                        points: currentLine.points() 
+                    }));
+                    currentLine = null; 
+                }
+            }
+
+            gsap.to(cursorLabel, { opacity: 0, duration: 0.3, onComplete: () => cursorLabel.style.display = 'none' });
+        });
+
+        document.getElementById('clear-btn').addEventListener('click', function () {
+            if (confirm('Are you sure you want to clear the whiteboard?')) {
+                socket.send(JSON.stringify({ type: 'clear' }));
+                layer.removeChildren();
+                layer.batchDraw();
+            }
+        });
+    
+        document.getElementById('eraser-btn').addEventListener('click', function () {
+            selectedShape = 'free';
+            selectedColor = '#ffffff';
+        });
+
+        document.getElementById('undo-btn').addEventListener('click', function () {
+            console.log(undoStack)
+            if (undoStack.length > 0) {
+                const lastShape = undoStack.pop();
+                redoStack.push(lastShape);
+                layer.remove(lastShape);
+            }
+        });
+    
+        document.getElementById('redo-btn').addEventListener('click', function () {
+            console.log('here' , redoStack)
+            if (redoStack.length > 0) {
+                const lastRedoShape = redoStack.pop();
+                layer.add(lastRedoShape);
+                layer.batchDraw();
+                addToUndoStack(lastRedoShape); 
+            }
+        });
+    
+        function sendMessage() {
+            const messageInput = document.getElementById('chat-input');
+            const message = messageInput.value.trim();
+            if (message !== '') {
+                socket.send(JSON.stringify({ 'type': 'chat_message', 'message': message, 'user': user }));
+                messageInput.value = '';
+
+                const chatMessages = document.getElementById('chat-messages');
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+        }
+        
+        socket.onmessage = function (event) {
+            const data = JSON.parse(event.data);
+            console.log(event);
+            
+
+            if (data.type == 'draw') {
+                
+                if (data.shape == 'free') {
+                    const line = new Konva.Line({
+                        stroke: data.color,
+                        strokeWidth: 3,
+                        points: data.points,
+                        lineCap: 'round',
+                        lineJoin: 'round',
+                    });
+                    layer.add(line);
+                    addToUndoStack(line);
+                } else if (data.shape == 'rect') {
+                    const rect = new Konva.Rect({
+                        x: data.x,
+                        y: data.y,
+                        width: data.width,
+                        height: data.height,
+                        stroke: data.color,
+                        strokeWidth: 3,
+                    });
+                    layer.add(rect);
+                    addToUndoStack(rect);
+                } else if (data.shape == 'circle') {
+                    const circle = new Konva.Circle({
+                        x: data.x,
+                        y: data.y,
+                        radius: data.radius,
+                        stroke: data.color,
+                        strokeWidth: 3,
+                    });
+                    layer.add(circle);
+                    addToUndoStack(circle);
+                }
+            } else if (data.type === 'chat_message') {
+                
+                const messageElement = document.createElement('div');
+                messageElement.classList.add('mb-2', 'd-flex');
+
+                const usernameElement = document.createElement('strong');
+                usernameElement.classList.add('text-primary', 'mr-2');
+                usernameElement.textContent = `${data.user}:`; 
+
+                const messageContent = document.createElement('div');
+                messageContent.classList.add('bg-light', 'p-2', 'rounded');
+                messageContent.style.flexGrow = '1';
+
+                const messageText = document.createElement('span');
+                messageText.textContent = data.message;
+
+                const timestamp = document.createElement('small');
+                timestamp.classList.add('d-block', 'text-muted', 'mt-1');
+                const messageTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+                timestamp.textContent = messageTimestamp;
+
+                messageContent.appendChild(messageText);
+                messageContent.appendChild(timestamp);
+                messageElement.appendChild(usernameElement);
+                messageElement.appendChild(messageContent);
+                document.getElementById('chat-messages').appendChild(messageElement);
+
+                const chatMessages = document.getElementById('chat-messages');
+                chatMessages.scrollTop = chatMessages.scrollHeight;
+            }
+            else if(data.type == 'clear'){
+                layer.removeChildren();
+                layer.batchDraw();
+            }
+        };
+
+        
+
+        document.getElementById('chat-input').addEventListener('keydown', function (e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                sendMessage();
+            }
+        });
+
+        window.onload = function () {
+            const chatMessages = document.getElementById('chat-messages');
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        };
+    
+    </script>
+</body>
+</html>
