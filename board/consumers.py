@@ -50,6 +50,16 @@ class WhiteBoardAndChatConsumer(AsyncWebsocketConsumer):
                     'type': 'clear_board',
                 }
             )
+        elif data['type'] == 'mouse':
+            await self.channel_layer.group_send(
+                self.room_group_name,
+                {
+                    'type' : 'mouse',
+                    'user' : data['user'],
+                    'x' : data['x'],
+                   'y' : data['y'],
+                }
+            )
 
     async def draw_shape(self, event):
         await self.send(text_data=json.dumps({
@@ -75,6 +85,16 @@ class WhiteBoardAndChatConsumer(AsyncWebsocketConsumer):
         await self.send(text_data=json.dumps({
             'type': 'clear',
         }))
+
+    async def mouse(self, event):
+        await self.send(text_data= json.dumps(
+            {
+                'type' : 'mouse',
+                'user' : event['user'],
+                'x' : event['x'],
+                'y' : event['y']
+            }
+        ))
     
 
 @database_sync_to_async
