@@ -6,7 +6,7 @@
     <title>Whiteboard with Chat</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
     <style>
-        #whiteboard-container {
+         #whiteboard-container {
             border: 2px solid #ccc;
             background-color: white;
             position: relative;
@@ -29,7 +29,7 @@
             padding: 10px;
             overflow-y: auto;
             scroll-behavior: smooth;
-            height: 700px;
+            height: 760px;
         }
         #chat-messages div {
             padding: 8px;
@@ -73,6 +73,38 @@
             border-radius: 5px;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         }
+        @media (max-width: 768px) {
+            .flex-grow-1 {
+                height: auto; }
+            #chat-container {
+                width: 100%; 
+                height: auto; 
+                margin-top: 10px; 
+            }
+            #chat-messages {
+                height: auto; 
+            }
+        }
+        .msgg {
+            display: none; 
+            position: absolute;
+            background-color: #333; 
+            color: #fff; 
+            padding: 10px; 
+            border-radius: 4px; 
+            font-size: 14px; 
+            z-index: 1000; 
+            white-space: nowrap; 
+            transition: opacity 0.3s ease; 
+            opacity: 0; 
+            top: 20px;
+        }
+
+        
+        .msg:hover + .msgg {
+            display: block; 
+            opacity: 1; 
+        }
     </style>
 </head>
 <body>
@@ -88,10 +120,12 @@
             <option value="rect">Rectangle</option>
             <option value="circle">Circle</option>
         </select>
-        <button class="btn btn-light" id="eraser-btn">Eraser</button>
-        <button class="btn btn-light" id="undo-btn">Undo</button>
-        <button class="btn btn-light" id="redo-btn">Redo</button>
+        <button class="msg btn btn-light" id="eraser-btn">
+            Eraser  
+        </button>
+        <p class="msgg">Again pick a color after using eraser, sorry from dev</p>
         <button class="btn btn-danger" id="clear-btn">Clear</button>
+
     </div>
     
     <div class="d-flex">
@@ -122,7 +156,6 @@
     <script>
         const roomName = "{{ room_name }}";
         const user = "{{ user }}";
-        
     
         const socket = new WebSocket(
             'ws://' + window.location.host + '/ws/whiteboardandchat/' + roomName + '/'
@@ -169,171 +202,157 @@
         let startX, startY;
         const undoStack = [];
         const redoStack = [];
-
+    
         function addToUndoStack(shape) {
-            
-            undoStack.push(shape.clone());
-            redoStack.length = 0
+            undoStack.push(shape);
+            redoStack.length = 0;
         }
-
+    
+        let lastSendTime = 0;
+        const sendInterval = 50; 
+    
         stage.on('mousedown', (e) => {
-    const pos = stage.getPointerPosition();
-    startX = pos.x;
-    startY = pos.y;
-    isDrawing = true;
-
+            const pos = stage.getPointerPosition();
+            startX = pos.x;
+            startY = pos.y;
+            isDrawing = true;
     
-    if (selectedShape === 'free') {
-        currentLine = new Konva.Line({
-            stroke: selectedColor,
-            strokeWidth: 3,
-            points: [startX, startY],
-            lineCap: 'round',
-            lineJoin: 'round',
+            if (selectedShape === 'free') {
+                currentLine = new Konva.Line({
+                    stroke: selectedColor,
+                    strokeWidth: 3,
+                    points: [startX, startY],
+                    lineCap: 'round',
+                    lineJoin: 'round',
+                });
+                layer.add(currentLine);
+            } else if (selectedShape === 'rect') {
+                currentShape = new Konva.Rect({
+                    x: startX,
+                    y: startY,
+                    width: 0,
+                    height: 0,
+                    stroke: selectedColor,
+                    strokeWidth: 3,
+                });
+                layer.add(currentShape);
+                addToUndoStack(currentShape);
+            } else if (selectedShape === 'circle') {
+                currentShape = new Konva.Circle({
+                    x: startX,
+                    y: startY,
+                    radius: 0,
+                    stroke: selectedColor,
+                    strokeWidth: 3,
+                });
+                layer.add(currentShape);
+                addToUndoStack(currentShape);
+            }
         });
-        layer.add(currentLine); 
-        addToUndoStack(currentLine)
-        layer.batchDraw(); 
-
-        
-        socket.send(JSON.stringify({
-            type: 'draw',
-            shape: 'free',
-            color: selectedColor,
-            points: [startX, startY], 
-        }));
-    } else if (selectedShape === 'rect') {
-        currentShape = new Konva.Rect({
-            x: startX,
-            y: startY,
-            width: 0, 
-            height: 0, 
-            stroke: selectedColor,
-            strokeWidth: 3,
-        });
-        layer.add(currentShape); 
-        addToUndoStack(currentShape)
-        layer.batchDraw(); 
-    } else if (selectedShape === 'circle') {
-        currentShape = new Konva.Circle({
-            x: startX,
-            y: startY,
-            radius: 0, 
-            stroke: selectedColor,
-            strokeWidth: 3,
-        });
-        layer.add(currentShape); 
-        addToUndoStack(currentShape)
-        layer.batchDraw(); 
-    }
-});
-
-stage.on('mousemove', (e) => {
-
-    const pos = stage.getPointerPosition();
-    socket.send(JSON.stringify({
-                type : 'mouse',
-                user : user,
-                x: pos.x,
-                y: (e.evt.clientY - 1000)
-            }))
     
-    if (selectedShape === 'free' && currentLine) {
-        const newPoints = currentLine.points().concat([pos.x, pos.y]);
-        currentLine.points(newPoints);
-        layer.batchDraw();
-
-        socket.send(JSON.stringify({
-            type: 'draw',
-            shape: 'free',
-            color: selectedColor,
-            points: newPoints
-        }));
-    } else if (selectedShape === 'rect' && currentShape) {
-        
-        currentShape.width(pos.x - startX);
-        currentShape.height(pos.y - startY);
-        layer.batchDraw(); 
-    } else if (selectedShape === 'circle' && currentShape) {
-        
-        const radius = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
-        currentShape.radius(radius);
-        layer.batchDraw(); 
-    }
-});
-
-stage.on('mouseup', (e) => {
-    isDrawing = false; 
-
+        function drawInterpolatedLine(startPoint, endPoint, segments) {
+            const dx = (endPoint.x - startPoint.x) / segments;
+            const dy = (endPoint.y - startPoint.y) / segments;
     
-    if (currentShape) {
-        
-        if (selectedShape === 'rect') {
-            socket.send(JSON.stringify({
-                type: 'draw',
-                shape: 'rect',
-                color: selectedColor,
-                x: startX,
-                y: startY,
-                width: currentShape.width(),
-                height: currentShape.height(),
-            }));
-        } else if (selectedShape === 'circle') {
-            const radius = currentShape.radius();
-            socket.send(JSON.stringify({
-                type: 'draw',
-                shape: 'circle',
-                color: selectedColor,
-                x: startX,
-                y: startY,
-                radius: radius,
-            }));
+            for (let i = 0; i < segments; i++) {
+                const x = startPoint.x + dx * i;
+                const y = startPoint.y + dy * i;
+                currentLine.points([...currentLine.points(), x, y]);
+            }
+            layer.batchDraw();
         }
-        currentShape = null; 
-    } else if (currentLine) {
-        
-        layer.add(currentLine); 
-        socket.send(JSON.stringify({
-            type: 'stop_draw', 
-            shape: 'free',
-            color: selectedColor,
-            points: currentLine.points(),
-        }));
-        currentLine = null; 
-    }
-
-    layer.batchDraw(); 
-});
+    
+        stage.on('mousemove', (e) => {
+            if (!isDrawing) return;
+            const pos = stage.getPointerPosition();
+    
+            
+            const currentTime = Date.now();
+            if (currentTime - lastSendTime >= sendInterval) {
+                lastSendTime = currentTime;
+                socket.send(JSON.stringify({
+                    type: 'mouse',
+                    user: user,
+                    x: pos.x,
+                    y: (e.evt.clientY - 1000)
+                }));
+            }
+    
+            if (selectedShape === 'free' && currentLine) {
+                const newPoints = currentLine.points().concat([pos.x, pos.y]);
+                drawInterpolatedLine(currentLine.points(), { x: pos.x, y: pos.y }, 5);
+                currentLine.points(newPoints);
+                layer.batchDraw();
+                addToUndoStack(currentLine);
+                socket.send(JSON.stringify({
+                    type: 'draw',
+                    shape: 'free',
+                    color: selectedColor,
+                    points: newPoints
+                }));
+            } else if (selectedShape === 'rect' && currentShape) {
+                currentShape.width(pos.x - startX);
+                currentShape.height(pos.y - startY);
+                layer.batchDraw();
+            } else if (selectedShape === 'circle' && currentShape) {
+                const radius = Math.sqrt(Math.pow(pos.x - startX, 2) + Math.pow(pos.y - startY, 2));
+                currentShape.radius(radius);
+                layer.batchDraw();
+            }
+        });
+    
+        stage.on('mouseup', (e) => {
+            isDrawing = false;
+    
+            if (currentShape) {
+                if (selectedShape === 'rect') {
+                    socket.send(JSON.stringify({
+                        type: 'draw',
+                        shape: 'rect',
+                        color: selectedColor,
+                        x: startX,
+                        y: startY,
+                        width: currentShape.width(),
+                        height: currentShape.height(),
+                    }));
+                } else if (selectedShape === 'circle') {
+                    const radius = currentShape.radius();
+                    socket.send(JSON.stringify({
+                        type: 'draw',
+                        shape: 'circle',
+                        color: selectedColor,
+                        x: startX,
+                        y: startY,
+                        radius: radius,
+                    }));
+                }
+                currentShape = null;
+            } else if (currentLine) {
+                socket.send(JSON.stringify({
+                    type: 'stop_draw',
+                    shape: 'free',
+                    color: selectedColor,
+                    points: currentLine.points(),
+                }));
+                currentLine = null;
+            }
+    
+            layer.batchDraw();
+        });
+    
         document.getElementById('clear-btn').addEventListener('click', function () {
             if (confirm('Are you sure you want to clear the whiteboard?')) {
                 socket.send(JSON.stringify({ type: 'clear' }));
                 layer.removeChildren();
                 layer.batchDraw();
+                undoStack.length = 0;
+                redoStack.length = 0;
             }
         });
     
         document.getElementById('eraser-btn').addEventListener('click', function () {
             selectedShape = 'free';
             selectedColor = '#ffffff';
-        });
-
-        document.getElementById('undo-btn').addEventListener('click', function () {
-            if (undoStack.length > 0) {
-                const lastShape = undoStack.pop();
-                layer.remove(lastShape);
-                redoStack.push(lastShape);
-                layer.batchDraw();
-            }
-        });
-    
-        document.getElementById('redo-btn').addEventListener('click', function () {
-            console.log('here' , redoStack)
-            if (redoStack.length > 0) {
-                const lastRedoShape = redoStack.pop();
-                layer.batchDraw();
-                layer.add(lastRedoShape);
-                addToUndoStack(lastRedoShape); 
-            }
         });
     
         function sendMessage() {
@@ -342,20 +361,17 @@ stage.on('mouseup', (e) => {
             if (message !== '') {
                 socket.send(JSON.stringify({ 'type': 'chat_message', 'message': message, 'user': user }));
                 messageInput.value = '';
-
+    
                 const chatMessages = document.getElementById('chat-messages');
                 chatMessages.scrollTop = chatMessages.scrollHeight;
             }
         }
-        
+    
         socket.onmessage = function (event) {
             const data = JSON.parse(event.data);
-            console.log(event);
-            
-
-            if (data.type == 'draw') {
-                
-                if (data.shape == 'free') {
+    
+            if (data.type === 'draw') {
+                if (data.shape === 'free') {
                     const line = new Konva.Line({
                         stroke: data.color,
                         strokeWidth: 3,
@@ -364,7 +380,7 @@ stage.on('mouseup', (e) => {
                         lineJoin: 'round',
                     });
                     layer.add(line);
-                } else if (data.shape == 'rect') {
+                } else if (data.shape === 'rect') {
                     const rect = new Konva.Rect({
                         x: data.x,
                         y: data.y,
@@ -374,7 +390,7 @@ stage.on('mouseup', (e) => {
                         strokeWidth: 3,
                     });
                     layer.add(rect);
-                } else if (data.shape == 'circle') {
+                } else if (data.shape === 'circle') {
                     const circle = new Konva.Circle({
                         x: data.x,
                         y: data.y,
@@ -385,48 +401,43 @@ stage.on('mouseup', (e) => {
                     layer.add(circle);
                 }
             } else if (data.type === 'chat_message') {
-                
                 const messageElement = document.createElement('div');
                 messageElement.classList.add('mb-2', 'd-flex');
-
+    
                 const usernameElement = document.createElement('strong');
                 usernameElement.classList.add('text-primary', 'mr-2');
-                usernameElement.textContent = `${data.user}:`; 
-
+                usernameElement.textContent = `${data.user}:`;
+    
                 const messageContent = document.createElement('div');
                 messageContent.classList.add('bg-light', 'p-2', 'rounded');
                 messageContent.style.flexGrow = '1';
-
+    
                 const messageText = document.createElement('span');
                 messageText.textContent = data.message;
-
+    
                 const timestamp = document.createElement('small');
                 timestamp.classList.add('d-block', 'text-muted', 'mt-1');
                 const messageTimestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
                 timestamp.textContent = messageTimestamp;
-
+    
                 messageContent.appendChild(messageText);
                 messageContent.appendChild(timestamp);
                 messageElement.appendChild(usernameElement);
                 messageElement.appendChild(messageContent);
                 document.getElementById('chat-messages').appendChild(messageElement);
-
+    
                 const chatMessages = document.getElementById('chat-messages');
                 chatMessages.scrollTop = chatMessages.scrollHeight;
-            }
-            else if(data.type == 'clear'){
+            } else if (data.type === 'clear') {
                 layer.removeChildren();
                 layer.batchDraw();
-            }
-            else if(data.type == 'mouse'){
+            } else if (data.type === 'mouse') {
                 cursorLabel.style.display = 'block';
                 cursorLabel.innerText = data.user;
-            gsap.to(cursorLabel, { x: data.x + 10, y: data.y, opacity: 1, duration: 0.2 });
+                gsap.to(cursorLabel, { x: data.x + 10, y: data.y + 10, duration: 0.1 });
             }
         };
-
-        
-
+    
         document.getElementById('chat-input').addEventListener('keydown', function (e) {
             if (e.key === 'Enter') {
                 e.preventDefault();
@@ -438,7 +449,7 @@ stage.on('mouseup', (e) => {
             const chatMessages = document.getElementById('chat-messages');
             chatMessages.scrollTop = chatMessages.scrollHeight;
         };
-    
     </script>
+    
 </body>
 </html>

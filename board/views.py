@@ -47,6 +47,9 @@ class BoardWithChatView(LoginRequiredMixin, TemplateView):
         room_name = kwargs.get('room_name')
         room = get_object_or_404(Room, name=room_name)
 
+        if (room is None):
+            Room.objects.create(name = room_name , created_by = request.user)
+
         return super().get(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
@@ -60,19 +63,8 @@ class BoardWithChatView(LoginRequiredMixin, TemplateView):
         return context
 
 from django.views import View
-from django.http import JsonResponse
 from .models import Room, ChatMessage
 
-class SendMessageView(LoginRequiredMixin, View):
-    def post(self, request, *args, **kwargs):
-        room_name = kwargs.get('room_name')
-        room = get_object_or_404(Room, name=room_name)
-
-        content = request.POST.get('message')
-        if content:
-            ChatMessage.objects.create(room=room, user=request.user, content=content)
-        
-        return redirect('board_with_chat', room_name=room_name)
 
 
 from django.contrib.auth import authenticate, login

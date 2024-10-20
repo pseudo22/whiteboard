@@ -43,11 +43,13 @@ class WhiteBoardAndChatConsumer(AsyncWebsocketConsumer):
                     'user': data['user'],
                 }
             )
+            await self.save_message(data['message'])
+
         elif data['type'] == 'clear':
             await self.channel_layer.group_send(
                 self.room_group_name,
                 {
-                    'type': 'clear_board',
+                    'type': 'clear_board'
                 }
             )
         elif data['type'] == 'mouse':
@@ -60,6 +62,8 @@ class WhiteBoardAndChatConsumer(AsyncWebsocketConsumer):
                    'y' : data['y'],
                 }
             )
+        
+        
 
     async def draw_shape(self, event):
         await self.send(text_data=json.dumps({
@@ -80,7 +84,6 @@ class WhiteBoardAndChatConsumer(AsyncWebsocketConsumer):
             'message': event['message'],
             'user': event['user'],
         }))
-
     async def clear_board(self, event):
         await self.send(text_data=json.dumps({
             'type': 'clear',
@@ -97,7 +100,7 @@ class WhiteBoardAndChatConsumer(AsyncWebsocketConsumer):
         ))
     
 
-@database_sync_to_async
-def save_message(self, message):
-    room = Room.objects.get(name=self.room_name)
-    ChatMessage.objects.create(room=room, message=message, user=self.scope['user'])
+    @database_sync_to_async
+    def save_message(self, message):
+        room = Room.objects.get(name=self.room_name)
+        ChatMessage.objects.create(room=room, message=message, user = self.scope['user'])
