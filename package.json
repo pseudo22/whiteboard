@@ -1,6 +1,5 @@
 {
     "scripts": {
-      "postinstall": "python whiteboard/manage.py migrate"
+      "postinstall": "python whiteboard/manage.py migrate --verbosity 2"
     }
   }
-  
