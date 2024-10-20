@@ -158,8 +158,9 @@
         const user = "{{ user }}";
     
         const socket = new WebSocket(
-            'wss://' + window.location.host + '/ws/whiteboardandchat/' + roomName + '/'
+    'wss://whiteboard-rvag.onrender.com/ws/whiteboardandchat/' + roomName + '/'
         );
+
     
         socket.onopen = function () {
             console.log('WebSocket connection established.');
