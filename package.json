@@ -1,0 +1,6 @@
+{
+    "scripts": {
+      "postinstall": "python whiteboard/manage.py migrate"
+    }
+  }
+  
