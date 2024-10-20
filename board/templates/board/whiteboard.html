@@ -141,7 +141,7 @@
                         </div>
                     </div>
                 {% empty %}
-                    <div>No messages yet.</div>
+                    <div>No messages yet</div>
                 {% endfor %}
             </div>
             <input type="text" id="chat-input" class="form-control" placeholder="Type a message">
@@ -155,7 +155,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.11.5/gsap.min.js"></script>
     <script>
         const roomName = "{{ room_name }}";
-        const user = "{{ user }}";  
+        const user = "{{ user }}";
     
         const socket = new WebSocket(
             'wss://' + window.location.host + '/ws/whiteboardandchat/' + roomName + '/'
